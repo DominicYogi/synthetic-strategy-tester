@@ -1,77 +1,66 @@
 import streamlit as st
 import plotly.graph_objects as go
-
 from market_generator import generate_candles
-from strategies.breakout import breakout_retest_strategy
+from strategies.breakout import breakout_strategy
 
 st.set_page_config(page_title="Synthetic Strategy Tester", layout="wide")
 
-st.title("Synthetic Strategy Tester")
+st.title("📈 Synthetic Strategy Tester")
+st.markdown("Simulate fake markets, test breakout + retest strategy, and visualize results.")
 
-# Sidebar inputs
-st.sidebar.header("Market Settings")
-min_price = st.sidebar.number_input("Min Price", value=90.0)
-max_price = st.sidebar.number_input("Max Price", value=110.0)
-volatility = st.sidebar.slider("Volatility Level", 1, 10, 3)
-num_candles = st.sidebar.slider("Number of Candles", 50, 500, 100)
-market_mode = st.sidebar.selectbox("Market Behavior Mode", ["trending", "ranging", "wild"])
+# --- Sidebar Inputs ---
+st.sidebar.header("Market Parameters")
+
+price_min = st.sidebar.number_input("Min Price", value=100.0)
+price_max = st.sidebar.number_input("Max Price", value=200.0)
+volatility = st.sidebar.slider("Volatility Level (1–10)", 1, 10, 3)
+num_candles = st.sidebar.number_input("Number of Candles", value=100)
+market_mode = st.sidebar.selectbox("Market Behavior", ["trending", "ranging", "wild"])
 
 st.sidebar.header("Strategy Settings")
-strategy_choice = st.sidebar.selectbox("Strategy", ["Breakout + Retest"])
-lookback = st.sidebar.slider("Breakout Lookback", 5, 30, 10)
-rr_ratio = st.sidebar.slider("Risk:Reward Ratio", 1.0, 3.0, 2.0)
+lookback = st.sidebar.number_input("Breakout Lookback Candles", value=5)
+rr_ratio = st.sidebar.number_input("Risk-Reward Ratio", value=2.0)
 
-if st.sidebar.button("Run Backtest"):
-    # Generate synthetic market
-    candles = generate_candles(min_price, max_price, volatility, num_candles, market_mode)
+if st.sidebar.button("Run Strategy"):
+    # --- Generate market ---
+    candles = generate_candles(price_min, price_max, volatility, num_candles, mode=market_mode)
 
-    # Run strategy
-    trades = breakout_retest_strategy(candles, breakout_lookback=lookback, risk_reward_ratio=rr_ratio)
+    # --- Run strategy ---
+    results = breakout_strategy(candles, breakout_lookback=lookback, risk_reward=rr_ratio)
 
-    # Display stats
-    wins = sum(1 for t in trades if t['result'] == 'win')
-    losses = len(trades) - wins
-    win_rate = (wins / len(trades) * 100) if trades else 0
-
-    st.subheader("Strategy Stats")
-    st.write(f"Total Trades: {len(trades)}")
-    st.write(f"Wins: {wins}")
-    st.write(f"Losses: {losses}")
-    st.write(f"Win Rate: {win_rate:.2f}%")
-
-    # Plot candlesticks
+    # --- Plot chart ---
     fig = go.Figure()
-    for i, c in enumerate(candles):
-        color = 'green' if c['close'] >= c['open'] else 'red'
+
+    for i, candle in enumerate(candles):
+        color = "green" if candle["close"] > candle["open"] else "red"
         fig.add_trace(go.Candlestick(
-            x=[i],
-            open=[c['open']],
-            high=[c['high']],
-            low=[c['low']],
-            close=[c['close']],
-            increasing_line_color='green',
-            decreasing_line_color='red',
+            x=[i], open=[candle["open"]], high=[candle["high"]],
+            low=[candle["low"]], close=[candle["close"]],
+            increasing_line_color='green', decreasing_line_color='red',
             showlegend=False
         ))
 
-    # Mark entries
-    for trade in trades:
-        entry_x = trade['entry_index']
-        entry_price = trade['entry_price']
-        color = 'blue' if trade['type'] == 'long' else 'orange'
-        fig.add_trace(go.Scatter(
-            x=[entry_x],
-            y=[entry_price],
-            mode='markers',
-            marker=dict(color=color, size=10),
-            name=f"{trade['type'].capitalize()} Entry"
-        ))
+    for idx in results["entries"]:
+        fig.add_trace(go.Scatter(x=[idx], y=[candles[idx]["close"]],
+                                 mode="markers", marker=dict(color="blue", size=10),
+                                 name="Entry"))
 
-    st.subheader("Candlestick Chart")
+    for idx in results["exits"]:
+        fig.add_trace(go.Scatter(x=[idx], y=[candles[idx]["close"]],
+                                 mode="markers", marker=dict(color="orange", size=10),
+                                 name="Exit"))
+
     st.plotly_chart(fig, use_container_width=True)
 
-    # Export data
-    if st.button("Download Test Data"):
-        import pandas as pd
-        df = pd.DataFrame(candles)
-        st.download_button("Download Candles CSV", df.to_csv(index=False), file_name="synthetic_candles.csv")
+    # --- Stats ---
+    total_trades = results["win_count"] + results["loss_count"]
+    win_rate = (results["win_count"] / total_trades) * 100 if total_trades > 0 else 0
+
+    st.subheader("📊 Strategy Results")
+    st.write(f"**Total Trades**: {total_trades}")
+    st.write(f"**Wins**: {results['win_count']}")
+    st.write(f"**Losses**: {results['loss_count']}")
+    st.write(f"**Win Rate**: {win_rate:.2f}%")
+
+    # --- Export option ---
+    st.download_button("Download Candle Data", str(candles), file_name="synthetic_candles.txt")
