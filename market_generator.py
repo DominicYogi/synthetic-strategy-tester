@@ -1,37 +1,50 @@
 import random
 
-def generate_candles(min_price, max_price, volatility, num_candles):
+def generate_candles(price_min, price_max, volatility, num_candles, mode='trending'):
+    """
+    Generates synthetic OHLC candles.
+
+    Args:
+        price_min (float): Minimum base price.
+        price_max (float): Maximum base price.
+        volatility (int): Volatility level (1-10).
+        num_candles (int): Number of candles to generate.
+        mode (str): Market behavior - 'trending', 'ranging', or 'wild'.
+
+    Returns:
+        list of dicts: Each dict has 'open', 'high', 'low', 'close'
+    """
+
     candles = []
-    last_close = random.uniform(min_price, max_price)
+    base_price = random.uniform(price_min, price_max)
+
+    direction = 1  # 1 = up, -1 = down
+    if mode == 'ranging':
+        direction = 0
+    elif mode == 'wild':
+        direction = None  # Fully random direction
 
     for _ in range(num_candles):
-        # Calculate price movement range based on volatility
-        max_move = (max_price - min_price) * (volatility / 50)  # smaller factor to keep moves realistic
+        if mode == 'wild':
+            direction = random.choice([-1, 1])
+        elif mode == 'ranging':
+            direction *= -1  # Flip direction every time
+        # else: keep same direction (trending)
 
-        # Open is last close
-        open_price = last_close
+        move = random.uniform(0.1, volatility) * direction
+        open_price = base_price
+        close_price = base_price + move
+        high = max(open_price, close_price) + random.uniform(0, volatility / 2)
+        low = min(open_price, close_price) - random.uniform(0, volatility / 2)
 
-        # Random move up or down for close price within max_move
-        close_price = open_price + random.uniform(-max_move, max_move)
-
-        # Ensure close is within min/max bounds
-        close_price = max(min(close_price, max_price), min_price)
-
-        # High is max of open, close plus random wiggle
-        high_price = max(open_price, close_price) + random.uniform(0, max_move / 2)
-        high_price = min(high_price, max_price)
-
-        # Low is min of open, close minus random wiggle
-        low_price = min(open_price, close_price) - random.uniform(0, max_move / 2)
-        low_price = max(low_price, min_price)
-
-        candles.append({
+        candle = {
             'open': round(open_price, 2),
-            'high': round(high_price, 2),
-            'low': round(low_price, 2),
+            'high': round(high, 2),
+            'low': round(low, 2),
             'close': round(close_price, 2)
-        })
+        }
 
-        last_close = close_price
+        candles.append(candle)
+        base_price = close_price  # Next open = previous close
 
     return candles
