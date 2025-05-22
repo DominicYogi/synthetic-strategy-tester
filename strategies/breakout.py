@@ -1,79 +1,75 @@
-def breakout_retest_strategy(candles, breakout_lookback=10, risk_reward_ratio=2):
+def breakout_strategy(candles, breakout_lookback=5, risk_reward=2):
     """
-    Simple breakout + retest strategy.
-    
-    Parameters:
-        candles (List[dict]): List of OHLC candles.
-        breakout_lookback (int): Number of candles to look back for highs/lows.
-        risk_reward_ratio (float): Ratio for setting TP based on SL.
-    
+    Simulates a breakout + retest strategy.
+
+    Args:
+        candles (list): List of OHLC candle dicts.
+        breakout_lookback (int): Number of candles to look back for highs.
+        risk_reward (float): RR ratio to target profit.
+
     Returns:
-        List[dict]: List of trades with entry/exit details.
+        dict: {
+            'entries': [index of entries],
+            'exits': [index of exits],
+            'win_count': int,
+            'loss_count': int,
+            'trades': list of {entry_idx, exit_idx, result}
+        }
     """
+
+    entries = []
+    exits = []
     trades = []
-    i = breakout_lookback
+    win_count = 0
+    loss_count = 0
 
-    while i < len(candles) - 1:
-        window = candles[i - breakout_lookback:i]
-        current = candles[i]
+    in_trade = False
+    entry_price = None
+    stop_loss = None
+    target = None
+    entry_idx = None
 
-        # Get highest high in lookback window
-        recent_high = max(c['high'] for c in window)
-        recent_low = min(c['low'] for c in window)
+    for i in range(breakout_lookback, len(candles)):
+        candle = candles[i]
+        recent_highs = [c['high'] for c in candles[i - breakout_lookback:i]]
+        max_recent_high = max(recent_highs)
 
-        # Long Breakout Setup
-        if current['close'] > recent_high:
-            breakout_level = recent_high
-            entry_candle = candles[i + 1]  # Next candle
-            entry_price = breakout_level
-
+        # 1. Entry condition
+        if not in_trade and candle['close'] > max_recent_high:
             # Wait for retest
-            for j in range(i + 1, len(candles)):
+            retest_level = max_recent_high
+            for j in range(i+1, min(i+6, len(candles))):
                 retest_candle = candles[j]
-                if retest_candle['low'] <= breakout_level:
-                    sl = breakout_level - 1  # Static 1 unit below
-                    tp = entry_price + (entry_price - sl) * risk_reward_ratio
-                    result = 'win' if retest_candle['high'] >= tp else 'loss'
-
-                    trades.append({
-                        'type': 'long',
-                        'entry_index': j,
-                        'entry_price': entry_price,
-                        'stop_loss': sl,
-                        'take_profit': tp,
-                        'result': result
-                    })
-                    i = j + 1
+                if retest_candle['low'] <= retest_level:
+                    # Enter trade on retest
+                    entry_price = retest_candle['close']
+                    stop_loss = entry_price - (entry_price - retest_level)
+                    target = entry_price + (entry_price - stop_loss) * risk_reward
+                    entry_idx = j
+                    in_trade = True
                     break
-            else:
-                i += 1
 
-        # Short Breakout Setup
-        elif current['close'] < recent_low:
-            breakout_level = recent_low
-            entry_candle = candles[i + 1]
-            entry_price = breakout_level
+        # 2. Exit condition
+        if in_trade:
+            if candle['high'] >= target:
+                # Take profit hit
+                win_count += 1
+                exits.append(i)
+                entries.append(entry_idx)
+                trades.append({'entry_idx': entry_idx, 'exit_idx': i, 'result': 'win'})
+                in_trade = False
+            elif candle['low'] <= stop_loss:
+                # Stop loss hit
+                loss_count += 1
+                exits.append(i)
+                entries.append(entry_idx)
+                trades.append({'entry_idx': entry_idx, 'exit_idx': i, 'result': 'loss'})
+                in_trade = False
 
-            for j in range(i + 1, len(candles)):
-                retest_candle = candles[j]
-                if retest_candle['high'] >= breakout_level:
-                    sl = breakout_level + 1
-                    tp = entry_price - (sl - entry_price) * risk_reward_ratio
-                    result = 'win' if retest_candle['low'] <= tp else 'loss'
-
-                    trades.append({
-                        'type': 'short',
-                        'entry_index': j,
-                        'entry_price': entry_price,
-                        'stop_loss': sl,
-                        'take_profit': tp,
-                        'result': result
-                    })
-                    i = j + 1
-                    break
-            else:
-                i += 1
-        else:
-            i += 1
-
-    return trades
+    return {
+        'entries': entries,
+        'exits': exits,
+        'win_count': win_count,
+        'loss_count': loss_count,
+        'trades': trades
+    }
